@@ -2,27 +2,10 @@
 using Newtonsoft.Json;
 
 
-string clientId = "1329846684594733106";
+string clientId = Environment.GetEnvironmentVariable("DISCORD_APP_CLIENT_ID");
+string clientSecret = Environment.GetEnvironmentVariable("DISCORD_APP_CLIENT_SECRET");
 string redirectUri = "http://localhost/acculti-auth";
 string scope = "identify";
-string authUrl = $"https://discord.com/api/oauth2/authorize?client_id={clientId}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code&scope={scope}";
-//Console.WriteLine("Open the following URL in your browser and authenticate:");
-//Console.WriteLine(authUrl);
-//HttpClient client = new HttpClient();
-//var values = new Dictionary<string, string>
-//{
-//    { "client_id", clientId },
-//    { "client_secret", "YOUR_CLIENT_SECRET" },
-//    { "grant_type", "authorization_code" },
-//    { "code", "USER_PROVIDED_CODE" },
-//    { "redirect_uri", "http://localhost/cli-auth" }
-//};
-//var content = new FormUrlEncodedContent(values);
-//HttpResponseMessage response = await client.PostAsync("https://discord.com/api/oauth2/token", content);
-//string responseString = await response.Content.ReadAsStringAsync();
-//var tokenData = JsonConvert.DeserializeObject<Dictionary<string, string>>(responseString);
-//string accessToken = tokenData["access_token"];
-//string refreshToken = tokenData["refresh_token"];
 string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Acculti", "user_accounts.json");
 
 
@@ -36,6 +19,39 @@ while (true)
     string command = Console.ReadLine();
     switch (command)
     {
+        case "login":
+            Console.WriteLine("Stored accounts:");
+            for (int i = 0; i < accounts.Accounts.Count; i++)
+            {
+                Console.WriteLine($"{i + 1}. {accounts.Accounts[i].Nickname}");
+            }
+            Console.Write("Enter the number of the account to login: ");
+            int selectedAccountIndex = int.Parse(Console.ReadLine()) - 1;
+
+            if (selectedAccountIndex >= 0 && selectedAccountIndex < accounts.Accounts.Count)
+            {
+                var selectedAccount = accounts.Accounts[selectedAccountIndex];
+                if (selectedAccount.TokenExpiry < DateTime.UtcNow)
+                {
+                    Console.WriteLine("Token expired. Refreshing token...");
+                    var refreshedTokens = await Methods.RefreshTokenAsync(selectedAccount.RefreshToken, clientId, clientSecret, redirectUri);
+
+                    selectedAccount.AccessToken = refreshedTokens["access_token"];
+                    selectedAccount.RefreshToken = refreshedTokens["refresh_token"];
+                    selectedAccount.TokenExpiry = DateTime.UtcNow.AddSeconds(int.Parse(refreshedTokens["expires_in"]));
+
+                    Methods.SaveAccounts(accounts, filePath);
+                }
+
+                Console.WriteLine($"Logging into Discord as {selectedAccount.Nickname}...");
+                var userInfo = await Methods.GetUserInfoAsync(selectedAccount.AccessToken);
+                Console.WriteLine($"Logged in as {userInfo.Username}#{userInfo.Discriminator}");
+            }
+            else
+            {
+                Console.WriteLine("Invalid account selection.");
+            }
+            break;
         case "add":
             Console.Write("Enter nickname: ");
             string nickname = Console.ReadLine();
@@ -44,8 +60,8 @@ while (true)
             string authUrl = $"https://discord.com/api/oauth2/authorize?client_id={clientId}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code&scope={scope}";
             Console.WriteLine(authUrl);
 
-            string authorizationCode = CaptureAuthorizationCode(redirectUri);
-            var tokenData = await ExchangeCodeForTokensAsync(authorizationCode, clientId, "YOUR_CLIENT_SECRET", redirectUri);
+            string authorizationCode = Methods.CaptureAuthorizationCode(redirectUri);
+            var tokenData = await Methods.ExchangeCodeForTokensAsync(authorizationCode, clientId, clientSecret, redirectUri);
 
             string accessToken = tokenData["access_token"];
             string refreshToken = tokenData["refresh_token"];
@@ -61,19 +77,6 @@ while (true)
             Methods.SaveAccounts(accounts, filePath);
             Console.WriteLine("Account added!");
             break;
-        //Console.Write("Enter nickname: ");
-        //string nickname = Console.ReadLine();
-
-        //accounts.Accounts.Add(new UserAccount
-        //{
-        //    Nickname = nickname,
-        //    AccessToken = accessToken,
-        //    RefreshToken = refreshToken,
-        //    TokenExpiry = DateTime.UtcNow.AddHours(1)
-        //});
-        //Methods.SaveAccounts(accounts, filePath);
-        //Console.WriteLine("Account added!");
-        //break;
         case "list":
             Console.WriteLine("Stored accounts:");
             foreach (var account in accounts.Accounts)

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -98,6 +99,41 @@ namespace Acculti
             HttpResponseMessage response = await client.PostAsync("https://discord.com/api/oauth2/token", content);
             string responseString = await response.Content.ReadAsStringAsync();
             return JsonConvert.DeserializeObject<Dictionary<string, string>>(responseString);
+        }
+        public static async Task<Dictionary<string, string>> RefreshTokenAsync(string refreshToken, string clientId, string clientSecret, string redirectUri)
+        {
+            using (var client = new HttpClient())
+            {
+                var content = new FormUrlEncodedContent(new[]
+                {
+            new KeyValuePair<string, string>("client_id", clientId),
+            new KeyValuePair<string, string>("client_secret", clientSecret),
+            new KeyValuePair<string, string>("grant_type", "refresh_token"),
+            new KeyValuePair<string, string>("refresh_token", refreshToken),
+            new KeyValuePair<string, string>("redirect_uri", redirectUri)
+        });
+
+                var response = await client.PostAsync("https://discord.com/api/oauth2/token", content);
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                var tokenData = JsonConvert.DeserializeObject<Dictionary<string, string>>(jsonResponse);
+                return tokenData;
+            }
+        }
+        public static async Task<UserInfo> GetUserInfoAsync(string accessToken)
+        {
+            using (var client = new HttpClient())
+            {
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                var response = await client.GetAsync("https://discord.com/api/v10/users/@me");
+                var content = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<UserInfo>(content);
+            }
+        }
+
+        public class UserInfo
+        {
+            public string Username { get; set; }
+            public string Discriminator { get; set; }
         }
     }
 }
